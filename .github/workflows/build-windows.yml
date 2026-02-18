@@ -3,8 +3,8 @@ name: Build Windows EXE
 on:
   push:
     tags:
-      - 'v*'  # 当推送 v* 标签时触发（如 v1.0.0）
-  workflow_dispatch:  # 允许手动触发
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -36,10 +36,10 @@ jobs:
         npm install
         npm run build
     
-    - name: Create Launcher
-      shell: python
+    - name: Create Launcher Script
       run: |
-        launcher_content = """import os
+        $launcher = @'
+        import os
         import sys
         import webbrowser
         import time
@@ -67,7 +67,6 @@ jobs:
             print("="*60)
             print("Mailbox Manager - Windows Edition")
             print("="*60)
-            print(f"Program directory: {exe_dir}")
             
             backend_port = find_free_port(8000)
             if not backend_port:
@@ -75,12 +74,7 @@ jobs:
                 input("Press Enter to exit...")
                 return
             
-            print(f"Backend port: {backend_port}")
             os.environ['PORT'] = str(backend_port)
-            
-            db_file = exe_dir / "mailbox.db"
-            if not db_file.exists():
-                print(f"Initializing database: {db_file}")
             
             print("Starting backend service...")
             try:
@@ -98,25 +92,19 @@ jobs:
                 )
                 server_thread.start()
                 
-                print("Waiting for server to start...")
                 time.sleep(3)
                 
                 frontend_url = f"http://127.0.0.1:{backend_port}"
-                print(f"Opening browser: {frontend_url}")
                 webbrowser.open(frontend_url)
                 
-                print("\\n" + "="*60)
-                print("Service started!")
-                print(f"Access URL: {frontend_url}")
-                print("Press Ctrl+C to stop")
-                print("="*60 + "\\n")
+                print(f"\nService started at: {frontend_url}")
+                print("Press Ctrl+C to stop\n")
                 
-                try:
-                    while True:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    print("Stopping service...")
+                while True:
+                    time.sleep(1)
                     
+            except KeyboardInterrupt:
+                print("Stopping...")
             except Exception as e:
                 print(f"Error: {e}")
                 import traceback
@@ -125,83 +113,72 @@ jobs:
 
         if __name__ == "__main__":
             main()
-        """
-        
-        with open('launcher.py', 'w', encoding='utf-8') as f:
-            f.write(launcher_content)
-        print('Launcher created')
+        '@
+        $launcher | Out-File -FilePath launcher.py -Encoding utf8
+      shell: pwsh
     
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller --noconfirm --clean --name "MailboxManager" --onedir --add-data "backend;backend" --add-data "frontend/dist;frontend/dist" --add-data "backend/.env.example;." --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on --hidden-import sqlalchemy.ext.asyncio --hidden-import sqlalchemy.dialects.sqlite --hidden-import aiosqlite --hidden-import httpx --hidden-import socks --hidden-import socksio launcher.py
+        pyinstaller --noconfirm --clean --name MailboxManager --onedir --add-data "backend;backend" --add-data "frontend/dist;frontend/dist" --add-data "backend/.env.example;." --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on --hidden-import sqlalchemy.ext.asyncio --hidden-import sqlalchemy.dialects.sqlite --hidden-import aiosqlite --hidden-import httpx --hidden-import socks --hidden-import socksio launcher.py
     
     - name: Create README
       run: |
-        echo "# Mailbox Manager - Windows 版本" > dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "## 使用说明" >> dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "1. 双击 MailboxManager.exe 启动程序" >> dist/MailboxManager/README.txt
-        echo "2. 程序会自动打开浏览器" >> dist/MailboxManager/README.txt
-        echo "3. 默认登录: admin / admin123" >> dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "## 数据存储" >> dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "所有数据存储在 mailbox.db 文件中，请定期备份。" >> dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "## 技术支持" >> dist/MailboxManager/README.txt
-        echo "" >> dist/MailboxManager/README.txt
-        echo "GitHub: https://github.com/xiaqi077/mailbox-manager" >> dist/MailboxManager/README.txt
+        @"
+        # Mailbox Manager - Windows Edition
+        
+        ## Quick Start
+        
+        1. Double-click MailboxManager.exe
+        2. Browser will open automatically
+        3. Login: admin / admin123
+        
+        ## Data Storage
+        
+        All data is stored in mailbox.db file.
+        Please backup regularly.
+        
+        ## Support
+        
+        GitHub: https://github.com/xiaqi077/mailbox-manager
+        "@ | Out-File -FilePath dist/MailboxManager/README.txt -Encoding utf8
+      shell: pwsh
     
     - name: Create ZIP archive
       run: |
-        cd dist
-        Compress-Archive -Path MailboxManager -DestinationPath MailboxManager-Windows-x64.zip
+        Compress-Archive -Path dist/MailboxManager -DestinationPath MailboxManager-Windows-x64.zip
     
-    - name: Get version
-      id: get_version
-      run: |
-        if ($env:GITHUB_REF -match 'refs/tags/(.*)') {
-          echo "VERSION=$($matches[1])" >> $env:GITHUB_OUTPUT
-        } else {
-          echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
-        }
-      shell: pwsh
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: MailboxManager-Windows-x64
+        path: MailboxManager-Windows-x64.zip
+        retention-days: 30
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: dist/MailboxManager-Windows-x64.zip
+        files: MailboxManager-Windows-x64.zip
         body: |
-          ## Mailbox Manager ${{ steps.get_version.outputs.VERSION }}
+          ## Mailbox Manager Windows Edition
           
-          ### 下载说明
+          ### Download
           
-          1. 下载 `MailboxManager-Windows-x64.zip`
-          2. 解压到任意目录
-          3. 双击 `MailboxManager.exe` 启动
+          Download `MailboxManager-Windows-x64.zip` and extract it.
           
-          ### 默认登录
+          ### Usage
           
-          - 用户名: `admin`
-          - 密码: `admin123`
+          1. Extract ZIP file
+          2. Double-click `MailboxManager.exe`
+          3. Login with `admin` / `admin123`
           
-          ### 系统要求
+          ### Requirements
           
           - Windows 10/11 (64-bit)
-          - 无需安装 Python 或 Node.js
+          - No Python or Node.js required
           
-          ### 更新日志
+          ### File Size
           
-          请查看 [CHANGELOG.md](https://github.com/xiaqi077/mailbox-manager/blob/main/CHANGELOG.md)
+          ~150-200 MB (includes all dependencies)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Upload artifact (for manual trigger)
-      if: github.event_name == 'workflow_dispatch'
-      uses: actions/upload-artifact@v3
-      with:
-        name: MailboxManager-Windows-x64
-        path: dist/MailboxManager-Windows-x64.zip
-        retention-days: 7
