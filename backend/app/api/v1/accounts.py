@@ -2,7 +2,7 @@ from typing import List, Optional, Generic, TypeVar
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, desc
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from pydantic.generics import GenericModel
 import csv
 import io
@@ -26,7 +26,7 @@ class ApiResponse(GenericModel, Generic[T]):
 
 # Schema 定义
 class CreateAccountSchema(BaseModel):
-    email_address: EmailStr
+    email_address: str
     provider: ProviderType
     auth_type: AuthType = AuthType.PASSWORD
     display_name: Optional[str] = None
@@ -48,7 +48,7 @@ class CreateAccountSchema(BaseModel):
     proxy_url: Optional[str] = None
 
 class UpdateAccountSchema(BaseModel):
-    email_address: Optional[EmailStr] = None
+    email_address: Optional[str] = None
     display_name: Optional[str] = None
     provider: Optional[ProviderType] = None
     

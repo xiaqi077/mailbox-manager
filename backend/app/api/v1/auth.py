@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 import httpx # 新增引用
 
 from app.core.config import settings
@@ -30,7 +30,7 @@ class RegisterSchema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     username: str
-    email: EmailStr
+    email: str  # 改为普通 str，不使用 EmailStr
     password: str
     full_name: Optional[str] = None
     password_confirm: Optional[str] = None
@@ -48,7 +48,7 @@ class ChangePasswordSchema(BaseModel):
 
 class UpdateProfileSchema(BaseModel):
     username: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
 
