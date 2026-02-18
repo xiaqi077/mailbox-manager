@@ -1,10 +1,10 @@
 name: Build Windows EXE
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,103 +14,33 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
     
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: '18'
     
-    - name: Install Python dependencies
+    - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r backend/requirements.txt
-        pip install pyinstaller
+        pip install -r backend/requirements.txt pyinstaller
+        cd frontend && npm install && npm run build
     
-    - name: Build Frontend
-      run: |
-        cd frontend
-        npm install
-        npm run build
+    - name: Build EXE
+      run: pyinstaller --noconfirm --clean --name MailboxManager --onedir --add-data "backend;backend" --add-data "frontend/dist;frontend/dist" --hidden-import uvicorn --hidden-import sqlalchemy --hidden-import aiosqlite launcher.py
     
-    - name: Verify launcher exists
-      run: |
-        if (Test-Path launcher.py) {
-          Write-Host "✓ Launcher found"
-        } else {
-          Write-Host "✗ ERROR: launcher.py not found!"
-          exit 1
-        }
-      shell: pwsh
+    - name: Package
+      run: Compress-Archive -Path dist/MailboxManager -DestinationPath MailboxManager-Windows.zip
     
-    - name: Build EXE with PyInstaller
-      run: |
-        pyinstaller --noconfirm --clean --name MailboxManager --onedir --add-data "backend;backend" --add-data "frontend/dist;frontend/dist" --add-data "backend/.env.example;." --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on --hidden-import sqlalchemy.ext.asyncio --hidden-import sqlalchemy.dialects.sqlite --hidden-import aiosqlite --hidden-import httpx --hidden-import socks --hidden-import socksio launcher.py
-    
-    - name: Create README
-      run: |
-        $readme = @"
-# Mailbox Manager - Windows Edition
-
-## Quick Start
-
-1. Double-click MailboxManager.exe
-2. Browser will open automatically
-3. Login: admin / admin123
-
-## Data Storage
-
-All data is stored in mailbox.db file.
-Please backup regularly.
-
-## Support
-
-GitHub: https://github.com/xiaqi077/mailbox-manager
-"@
-        $readme | Out-File -FilePath dist/MailboxManager/README.txt -Encoding utf8
-      shell: pwsh
-    
-    - name: Create ZIP archive
-      run: |
-        Compress-Archive -Path dist/MailboxManager -DestinationPath MailboxManager-Windows-x64.zip
-      shell: pwsh
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: MailboxManager-Windows-x64
-        path: MailboxManager-Windows-x64.zip
-        retention-days: 30
+        name: MailboxManager-Windows
+        path: MailboxManager-Windows.zip
     
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
+    - uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: MailboxManager-Windows-x64.zip
-        body: |
-          ## Mailbox Manager Windows Edition
-          
-          ### Download
-          
-          Download `MailboxManager-Windows-x64.zip` and extract it.
-          
-          ### Usage
-          
-          1. Extract ZIP file
-          2. Double-click `MailboxManager.exe`
-          3. Login with `admin` / `admin123`
-          
-          ### Requirements
-          
-          - Windows 10/11 (64-bit)
-          - No Python or Node.js required
-          
-          ### File Size
-          
-          ~150-200 MB (includes all dependencies)
+        files: MailboxManager-Windows.zip
