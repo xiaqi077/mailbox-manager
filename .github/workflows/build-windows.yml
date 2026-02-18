@@ -1,0 +1,212 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送 v* 标签时触发（如 v1.0.0）
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install pyinstaller
+    
+    - name: Build Frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
+    
+    - name: Create Launcher
+      run: |
+        python -c "
+import sys
+from pathlib import Path
+
+launcher_content = '''
+import os
+import sys
+import webbrowser
+import time
+from pathlib import Path
+import socket
+
+def find_free_port(start_port=8000):
+    for port in range(start_port, start_port + 100):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((\"127.0.0.1\", port))
+                return port
+        except OSError:
+            continue
+    return None
+
+def main():
+    if getattr(sys, \"frozen\", False):
+        app_dir = Path(sys._MEIPASS)
+        exe_dir = Path(sys.executable).parent
+    else:
+        app_dir = Path(__file__).parent
+        exe_dir = app_dir
+    
+    print(\"=\"*60)
+    print(\"Mailbox Manager - Windows 版本\")
+    print(\"=\"*60)
+    print(f\"程序目录: {exe_dir}\")
+    
+    backend_port = find_free_port(8000)
+    if not backend_port:
+        print(\"错误: 无法找到可用端口\")
+        input(\"按回车键退出...\")
+        return
+    
+    print(f\"后端端口: {backend_port}\")
+    os.environ[\"PORT\"] = str(backend_port)
+    
+    db_file = exe_dir / \"mailbox.db\"
+    if not db_file.exists():
+        print(f\"初始化数据库: {db_file}\")
+    
+    print(\"启动后端服务...\")
+    try:
+        backend_path = app_dir / \"backend\"
+        if backend_path.exists():
+            sys.path.insert(0, str(backend_path))
+        
+        from uvicorn import run
+        from main import app
+        
+        import threading
+        server_thread = threading.Thread(
+            target=lambda: run(app, host=\"127.0.0.1\", port=backend_port, log_level=\"info\"),
+            daemon=True
+        )
+        server_thread.start()
+        
+        print(\"等待服务器启动...\")
+        time.sleep(3)
+        
+        frontend_url = f\"http://127.0.0.1:{backend_port}\"
+        print(f\"打开浏览器: {frontend_url}\")
+        webbrowser.open(frontend_url)
+        
+        print(\"\\n\" + \"=\"*60)
+        print(\"服务已启动！\")
+        print(f\"访问地址: {frontend_url}\")
+        print(\"按 Ctrl+C 停止服务\")
+        print(\"=\"*60 + \"\\n\")
+        
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print(\"正在停止服务...\")
+            
+    except Exception as e:
+        print(f\"错误: {e}\")
+        import traceback
+        traceback.print_exc()
+        input(\"按回车键退出...\")
+
+if __name__ == \"__main__\":
+    main()
+'''
+
+with open('launcher.py', 'w', encoding='utf-8') as f:
+    f.write(launcher_content)
+print('Launcher created')
+        "
+    
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --noconfirm --clean --name "MailboxManager" --onedir --add-data "backend;backend" --add-data "frontend/dist;frontend/dist" --add-data "backend/.env.example;." --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on --hidden-import sqlalchemy.ext.asyncio --hidden-import sqlalchemy.dialects.sqlite --hidden-import aiosqlite --hidden-import httpx --hidden-import socks --hidden-import socksio launcher.py
+    
+    - name: Create README
+      run: |
+        echo "# Mailbox Manager - Windows 版本" > dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "## 使用说明" >> dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "1. 双击 MailboxManager.exe 启动程序" >> dist/MailboxManager/README.txt
+        echo "2. 程序会自动打开浏览器" >> dist/MailboxManager/README.txt
+        echo "3. 默认登录: admin / admin123" >> dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "## 数据存储" >> dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "所有数据存储在 mailbox.db 文件中，请定期备份。" >> dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "## 技术支持" >> dist/MailboxManager/README.txt
+        echo "" >> dist/MailboxManager/README.txt
+        echo "GitHub: https://github.com/xiaqi077/mailbox-manager" >> dist/MailboxManager/README.txt
+    
+    - name: Create ZIP archive
+      run: |
+        cd dist
+        Compress-Archive -Path MailboxManager -DestinationPath MailboxManager-Windows-x64.zip
+    
+    - name: Get version
+      id: get_version
+      run: |
+        if ($env:GITHUB_REF -match 'refs/tags/(.*)') {
+          echo "VERSION=$($matches[1])" >> $env:GITHUB_OUTPUT
+        } else {
+          echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
+        }
+      shell: pwsh
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: dist/MailboxManager-Windows-x64.zip
+        body: |
+          ## Mailbox Manager ${{ steps.get_version.outputs.VERSION }}
+          
+          ### 下载说明
+          
+          1. 下载 `MailboxManager-Windows-x64.zip`
+          2. 解压到任意目录
+          3. 双击 `MailboxManager.exe` 启动
+          
+          ### 默认登录
+          
+          - 用户名: `admin`
+          - 密码: `admin123`
+          
+          ### 系统要求
+          
+          - Windows 10/11 (64-bit)
+          - 无需安装 Python 或 Node.js
+          
+          ### 更新日志
+          
+          请查看 [CHANGELOG.md](https://github.com/xiaqi077/mailbox-manager/blob/main/CHANGELOG.md)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload artifact (for manual trigger)
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v3
+      with:
+        name: MailboxManager-Windows-x64
+        path: dist/MailboxManager-Windows-x64.zip
+        retention-days: 7
